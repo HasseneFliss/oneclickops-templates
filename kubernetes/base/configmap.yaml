@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{PROJECT_NAME}}-config
+  labels:
+    app: {{PROJECT_NAME}}
+data:
+  PORT: "{{SERVICE_PORT}}"
+  LOG_LEVEL: "info"
+  SERVICE_NAME: "{{PROJECT_NAME}}"

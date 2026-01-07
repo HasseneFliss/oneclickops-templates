@@ -1,0 +1,73 @@
+stages:
+  - test
+  - build
+  - deploy
+
+variables:
+  DOCKER_REGISTRY: {{DOCKER_REGISTRY}}
+  IMAGE_NAME: {{GITHUB_ORG}}/{{PROJECT_NAME}}
+  DOCKER_TLS_CERTDIR: "/certs"
+
+.kubectl_setup: &kubectl_setup
+  before_script:
+    - kubectl config use-context $KUBE_CONTEXT
+
+test:
+  stage: test
+  image: python:3.11
+  script:
+    - echo "Running tests for {{PROJECT_NAME}}"
+    # - pip install -r requirements.txt
+    # - pytest
+
+build:
+  stage: build
+  image: docker:24
+  services:
+    - docker:24-dind
+  script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker build -t $CI_REGISTRY/$IMAGE_NAME:$CI_COMMIT_SHA .
+    - docker build -t $CI_REGISTRY/$IMAGE_NAME:latest .
+    - docker push $CI_REGISTRY/$IMAGE_NAME:$CI_COMMIT_SHA
+    - docker push $CI_REGISTRY/$IMAGE_NAME:latest
+  only:
+    - main
+    - develop
+
+deploy-dev:
+  stage: deploy
+  image: bitnami/kubectl:latest
+  <<: *kubectl_setup
+  script:
+    - kubectl apply -k kubernetes/overlays/dev
+  environment:
+    name: dev
+    url: https://dev.{{DOMAIN}}
+  only:
+    - develop
+
+deploy-staging:
+  stage: deploy
+  image: bitnami/kubectl:latest
+  <<: *kubectl_setup
+  script:
+    - kubectl apply -k kubernetes/overlays/staging
+  environment:
+    name: staging
+    url: https://staging.{{DOMAIN}}
+  only:
+    - main
+
+deploy-production:
+  stage: deploy
+  image: bitnami/kubectl:latest
+  <<: *kubectl_setup
+  script:
+    - kubectl apply -k kubernetes/overlays/production
+  environment:
+    name: production
+    url: https://{{DOMAIN}}
+  when: manual
+  only:
+    - main

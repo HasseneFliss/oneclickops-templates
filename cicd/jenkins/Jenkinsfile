@@ -1,0 +1,101 @@
+pipeline {
+    agent any
+    
+    environment {
+        DOCKER_REGISTRY = '{{DOCKER_REGISTRY}}'
+        IMAGE_NAME = '{{GITHUB_ORG}}/{{PROJECT_NAME}}'
+        DOCKER_CREDENTIALS = credentials('docker-registry-creds')
+        KUBECONFIG = credentials('kubeconfig')
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+        
+        stage('Test') {
+            steps {
+                echo "Running tests for {{PROJECT_NAME}}"
+                // sh 'npm test' or 'pytest' etc.
+            }
+        }
+        
+        stage('Build') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'develop'
+                }
+            }
+            steps {
+                script {
+                    docker.withRegistry("https://${DOCKER_REGISTRY}", 'docker-registry-creds') {
+                        def image = docker.build("${IMAGE_NAME}:${BUILD_NUMBER}")
+                        image.push()
+                        image.push('latest')
+                    }
+                }
+            }
+        }
+        
+        stage('Deploy to Dev') {
+            when {
+                branch 'develop'
+            }
+            steps {
+                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+                    sh '''
+                        export KUBECONFIG=$KUBECONFIG
+                        kubectl apply -k kubernetes/overlays/dev
+                    '''
+                }
+            }
+        }
+        
+        stage('Deploy to Staging') {
+            when {
+                branch 'main'
+            }
+            steps {
+                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+                    sh '''
+                        export KUBECONFIG=$KUBECONFIG
+                        kubectl apply -k kubernetes/overlays/staging
+                    '''
+                }
+            }
+        }
+        
+        stage('Deploy to Production') {
+            when {
+                branch 'main'
+            }
+            input {
+                message "Deploy to production?"
+                ok "Deploy"
+            }
+            steps {
+                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+                    sh '''
+                        export KUBECONFIG=$KUBECONFIG
+                        kubectl apply -k kubernetes/overlays/production
+                    '''
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            cleanWs()
+        }
+        success {
+            echo "Pipeline completed successfully for {{PROJECT_NAME}}"
+        }
+        failure {
+            echo "Pipeline failed for {{PROJECT_NAME}}"
+        }
+    }
+}

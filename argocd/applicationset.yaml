@@ -1,0 +1,37 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: {{PROJECT_NAME}}-envs
+  namespace: argocd
+spec:
+  generators:
+    - list:
+        elements:
+          - env: dev
+            namespace: {{NAMESPACE}}-dev
+            targetRevision: develop
+          - env: staging
+            namespace: {{NAMESPACE}}-staging
+            targetRevision: main
+          - env: production
+            namespace: {{NAMESPACE}}
+            targetRevision: main
+  template:
+    metadata:
+      name: '{{PROJECT_NAME}}-{{`{{env}}`}}'
+      namespace: argocd
+    spec:
+      project: {{ARGOCD_PROJECT}}
+      source:
+        repoURL: https://github.com/{{GITHUB_ORG}}/{{PROJECT_NAME}}.git
+        targetRevision: '{{`{{targetRevision}}`}}'
+        path: 'kubernetes/overlays/{{`{{env}}`}}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{`{{namespace}}`}}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
